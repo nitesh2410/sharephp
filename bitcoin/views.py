@@ -30,14 +30,15 @@ Summary of all the 10 Tips mentioned:
 '''
 
 from django.shortcuts import render
-from .models import Buy_sell_data, coin_average
+from .models import Buy_sell_data, coin_average, coin_gecho
 from .resources import CoinResources
 from django.contrib import messages
 from tablib import Dataset
 from django.http import HttpResponse
 from django.db import connection
 import datetime
-
+from bs4 import BeautifulSoup
+import requests
 
 
 # Create your views here.
@@ -56,31 +57,47 @@ def simple_upload(request):
         imported_data = dataset.load(new_data.read(),format='xlsx')
         for data in imported_data:
             print(data)
+
+            data2  =  data[2].replace('INR', '')
+            data3 = data[3]
+            data5 = data[5]
+            if 'USDT' in data[2]:
+
+                data2 = data[2].replace('USDT', '')
+                data3 = data[3] * 75.5
+                data5 = data[5] * 75.5
+                print(data2)
+
             value = Buy_sell_data(
-                data[0], data[1], data[2], data[3], data[4], data[5], data[6])
+                data[0], data[1], data2, data3, data[4], data5, data[6])
             value.save()
     return render(request, 'upload.html')
 
 
 def getAvg(request):
-    trades = Buy_sell_data.objects.values('datadate', 'coin', 'price', 'volume', 'amount', 'trade').filter(datadate__gte=datetime.date(2021, 6, 22))
+    trades = Buy_sell_data.objects.values('datadate', 'coin', 'price', 'volume', 'amount', 'trade').filter(datadate__gte=datetime.date(2021, 6, 22)).exclude(coin='BTC')
     #print(trades)
     coinArr = {}
 
     cursor = connection.cursor()
-    cursor.execute("TRUNCATE TABLE `bitcoin_coin_average`")
+    #cursor.execute("TRUNCATE TABLE `bitcoin_coin_average`")
 
     for trade in trades:
         if trade['coin'] not in coinArr.keys():
             coinArr.update({trade['coin']: {'volume': 0, 'amount': 0}})
         print(trade['volume'])
         print(trade['trade'])
+        print(trade['coin'])
+
+
+
         if trade['trade'] == 'Sell':
             coinArr[trade['coin']]['volume'] = float("{:.2f}".format(coinArr[trade['coin']]['volume'])) - float("{:.2f}".format(trade['volume']))
             coinArr[trade['coin']]['amount'] = float("{:.2f}".format(coinArr[trade['coin']]['amount'])) - float("{:.2f}".format(trade['amount']))
         else:
             coinArr[trade['coin']]['volume'] = float("{:.2f}".format(coinArr[trade['coin']]['volume'])) + float("{:.2f}".format(trade['volume']))
             coinArr[trade['coin']]['amount'] = float("{:.2f}".format(coinArr[trade['coin']]['amount'])) + float("{:.2f}".format(trade['amount']))
+
 
 
         #print(coinArr[trade['coin']]['volume'])
@@ -96,15 +113,88 @@ def getAvg(request):
     for key, ca in coinArr.items():
         print(key)
 
-        newavg = ca['amount'];
+        gecko = get_geco(key)
+        print(gecko)
+        percent_down = gecko[3]
+        alltimehigh = float(gecko[2])
+        currentprice = float(gecko[6])
+
+       # currentprice = float(current_pr(key))
+
+        #if key.endswith("INR"):
+        alltimehigh = float(gecko[2]) * 75
+        currentprice = float(gecko[6]) * 75
+
+
+        newavg = (ca['amount'])/70;
         totalp = 0
         if ca['amount']< 0:
             newavg = 0
             totalp = ca['amount']
         avg = newavg/ca['volume'];
 
+        profitloss = currentprice * ca['volume'] - ca['volume'] * avg
 
-        value = coin_average(coin=key, volume=float("{:.2f}".format(ca['volume'])), amount=float("{:.2f}".format(newavg)), average=float("{:.2f}".format(avg)),TotalProfit=float("{:.2f}".format(totalp)))
+
+        value = coin_average(coin=key, volume=float("{:.2f}".format(ca['volume'])), amount=float("{:.2f}".format(newavg)), average=float("{:.2f}".format(avg)),TotalProfit=float("{:.2f}".format(totalp)),alltime_high = float("{:.2f}".format(alltimehigh)),percent_down = percent_down ,currentprice = float("{:.2f}".format(currentprice)) ,profit_loss = float("{:.2f}".format(profitloss)))
         value.save()
 
     return HttpResponse(1)
+
+
+def current_pr(coin):
+    pass
+
+def get_geco(coins):
+
+    #https://api.coinstats.app/public/v1/coins?skip=0&limit=25&currency=EUR
+    #https: // api.coinstats.app / public / v1 / coins / bitcoin?currency = USDT
+    #https: // documenter.getpostman.com / view / 5734027 / RzZ6Hzr3  # 948fea46-e93a-47f8-93d8-915583f7406d
+    print(coins)
+    #coins = coins.replace("USDT", "")
+    #coins = coins.replace("INR", "")
+
+    if coins == '':
+        coins = 'USDT'
+
+    coinObj = coin_gecho.objects.filter(coin=coins)
+    if not coinObj:
+        return [0,0,0,0,0,0,0,0]
+    return [0, 0, 0, 0, 0, 0, 0, 0]
+    print(coinObj[0].coinsearch)
+
+    url = 'https://www.coingecko.com/en/' + coinObj[0].coinsearch
+    print(url)
+
+    x = requests.get(url)
+
+    alltimehightext = 0
+    currentprice = 1
+
+    soup = BeautifulSoup(x.text, 'html.parser')
+
+    for table in soup.find_all("table", class_="table b-b"):
+        print(table)
+        for tr in table.findAll("tr"):
+            print(tr.th.text)
+            print(tr.td.text)
+            he = tr.th.text.strip()
+            print(he)
+            if he == 'All-Time High':
+                alltimehightext  = tr.td.text
+
+            if 'Price' in tr.th.text:
+                currentprice = tr.td.text.strip()
+    alltimeArr = alltimehightext.splitlines()
+
+    alltimeArr.append(currentprice)
+
+    print(alltimeArr)
+    gecko = [x.replace('$', '').replace(',', '') for x in alltimeArr]
+    return(gecko)
+
+
+
+
+
+

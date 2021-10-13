@@ -28,15 +28,52 @@ def dayprice(request, slug):
     sharePriceObj = sharePrice.objects.values('pricedate').filter(company_id_id=companyid).order_by('-pricedate')[0:1]
 
     todayDate = datetime.datetime.today()
-    if not sharePriceObj.exists():
-        NextDay_Date = datetime.datetime.today() - datetime.timedelta(days=365)
-        print(NextDay_Date)
-    else:
 
+    file = 'hist_stock_result.php'
+    if exchange == 'B':
+        file = 'histstock.php'
+
+
+    if not sharePriceObj.exists():
+
+        for p in range(1, 7):
+            url = 'https://www.moneycontrol.com/stocks/' + file + '?hdn=daily&fdt=2011-01-01&todt=2021-07-07&sc_id=' + slug + '&pno=' + str(p)
+            print(url)
+
+            x = requests.get(url)
+            print(x)
+
+            soup = BeautifulSoup(x.text, 'html.parser')
+            table = soup.find("table", {'class': 'tblchart'})
+
+            for tr in table.findAll("tr"):
+                print(tr)
+                thlist = list(tr.find_all("th"))
+                if len(thlist):
+                    continue
+
+                tdlist = list(tr.find_all("td"))
+                print(tdlist)
+                if len(tdlist):
+                    pricedate = datetime.datetime.strptime(tdlist[0].text, '%d-%m-%Y').strftime('%Y-%m-%d')
+                    s = sharePrice(company_id=Company.objects.get(id=companyid), pricedate=pricedate,
+                                   openprice=tdlist[1].text, closeprice=tdlist[4].text)
+                    s.save()
+
+                else:
+                    return HttpResponse(1)
+    else:
+        print(sharePriceObj)
         d1 = datetime.datetime(todayDate.year, todayDate.month, todayDate.day)
         d2 = datetime.datetime(sharePriceObj[0]['pricedate'].year, sharePriceObj[0]['pricedate'].month,sharePriceObj[0]['pricedate'].day)
+        print('---')
+        print(d1)
+
+        print(d2)
 
         delta = d1 - d2
+        print(delta)
+
         if delta.days == 1 and todayDate.weekday() == 5:
             return render(request, 'datavalue.html')
         elif delta.days == 2 and todayDate.weekday() == 6:
@@ -44,41 +81,37 @@ def dayprice(request, slug):
         elif d1 > d2:
             NextDay_Date = sharePriceObj[0]['pricedate'] + datetime.timedelta(days=1)
 
-    compname1 = compname.replace(" ", "%20")
-    #url = 'http://127.0.0.1:8000/fillvalues/dataval'
+        compname1 = compname.replace(" ", "%20")
 
-    file = 'hist_stock_result.php'
-    if exchange == 'B':
-        file = 'histstock.php'
+        url = 'https://www.moneycontrol.com/stocks/'+file+'?ex='+exchange+'&sc_id=' + slug + '&mycomp=' + compname1
+        print(url);
+        myobj = {'frm_dy': NextDay_Date.day, 'frm_mth':  NextDay_Date.month, 'frm_yr':  NextDay_Date.year, 'to_dy': todayDate.day, 'to_mth': todayDate.month, 'to_yr': todayDate.year, 'x': '17', 'y': '6', 'hdn': 'daily'}
+        print(myobj)
 
-    url = 'https://www.moneycontrol.com/stocks/'+file+'?ex='+exchange+'&sc_id=' + slug + '&mycomp=' + compname1
-    print(url);
-    myobj = {'frm_dy': NextDay_Date.day, 'frm_mth':  NextDay_Date.month, 'frm_yr':  NextDay_Date.year, 'to_dy': todayDate.day, 'to_mth': todayDate.month, 'to_yr': todayDate.year, 'x': '17', 'y': '6', 'hdn': 'daily'}
-    print(myobj)
+        #x = requests.get(url)
+        x = requests.post(url, data=myobj)
+        print(x)
 
-    #x = requests.get(url)
-    x = requests.post(url, data=myobj)
-    print(x)
+        soup = BeautifulSoup(x.text, 'html.parser')
+        table = soup.find("table", {'class': 'tblchart'})
 
-    soup = BeautifulSoup(x.text, 'html.parser')
-    table = soup.find("table", {'class': 'tblchart'})
+        for tr in table.findAll("tr"):
+            print(tr)
+            thlist = list(tr.find_all("th"))
+            if len(thlist):
+                continue
 
-    for tr in table.findAll("tr"):
-        print(tr)
-        thlist = list(tr.find_all("th"))
-        if len(thlist):
-            continue
+            tdlist = list(tr.find_all("td"))
+            print(tdlist)
+            if len(tdlist):
+                pricedate = datetime.datetime.strptime(tdlist[0].text, '%d-%m-%Y').strftime('%Y-%m-%d')
+                s = sharePrice(company_id=Company.objects.get(id=companyid), pricedate=pricedate, openprice=tdlist[1].text, closeprice=tdlist[4].text)
+                s.save()
 
-        tdlist = list(tr.find_all("td"))
-        print(tdlist)
-        if len(tdlist):
-            pricedate = datetime.datetime.strptime(tdlist[0].text, '%d-%m-%Y').strftime('%Y-%m-%d')
-            s = sharePrice(company_id=Company.objects.get(id=companyid), pricedate=pricedate, openprice=tdlist[1].text, closeprice=tdlist[4].text)
-            s.save()
-
-        else:
-            return HttpResponse(1)
+            else:
+                return HttpResponse(1)
     return HttpResponse(1)
+
 
 def home(request):
     return render(request, 'home.html')
@@ -188,3 +221,6 @@ def home(request):
 
 def dataval(request):
     return render(request, 'datavalue.html')
+
+
+#https: // username: password @github.com/nitesh2410/sharephp.git
